@@ -1,4 +1,4 @@
-from machine import Pin
+from machine import ADC, Pin
 import neopixel
 import time
 
@@ -55,11 +55,24 @@ def display_number(num):
                 set_segment_color(segment, (255, 0, 0))  # Red color
 
 try:
+    adc = ADC(Pin(26))
+    display_number(0)
+    i = 0
     while True:
-        for i in range(16):  # 0 to F
+        if (adc.read_u16() > 30000):
+            if i == 15:
+                i = 0
+            else:
+                i += 1
+            
             display_number(i)
-            print(i)
             time.sleep(1)
+            
+    #while True:
+    #    for i in range(16):  # 0 to F
+    #        display_number(i)
+    #        print(i)
+    #        time.sleep(1)
             
 except KeyboardInterrupt:
     # Turn off all LEDs on exit
