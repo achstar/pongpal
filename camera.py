@@ -4,9 +4,17 @@ from collections import deque
 
 # camera 
 cap = cv2.VideoCapture(1)  # camera settings
-
+cv2.namedWindow('test', cv2.WINDOW_NORMAL)
+# (Optional) Set the initial window size
+cv2.resizeWindow('test', 800, 600)  # Width, Height
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1600)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1200)
+cap.set(cv2.CAP_PROP_FPS, 30)
+actual_fps = cap.get(cv2.CAP_PROP_FPS)
+print(f"Camera FPS set to: {actual_fps}")
 # positions queue
 ball_positions = deque(maxlen=4)
+frame_count = 0
 
 # bounds 
 upper_bound = 0
@@ -19,6 +27,8 @@ current_side = ""
 above = False
 touch = False
 bounce = False
+prev_touch = False
+prev_above = False
 
 # cv setup
 if not cap.isOpened():
@@ -27,6 +37,7 @@ if not cap.isOpened():
 
 while True:
     ret, frame = cap.read()
+    frame_count += 1
     if not ret:
         print("Can't receive frame (stream end?). Exiting ...")
         break
@@ -40,10 +51,10 @@ while True:
     upper_orange = np.array([30, 255, 255])
     
     # red 1
-    lower_red1 = np.array([0, 200, 200])    
+    lower_red1 = np.array([0, 200, 150])    
     upper_red1 = np.array([10, 255, 255])
     # red 2 wraparound
-    lower_red2 = np.array([170, 200, 200])  
+    lower_red2 = np.array([170, 200, 150])  
     upper_red2 = np.array([180, 255, 255])
     # table blue
     lower_blue = np.array([100, 150, 50])  
@@ -62,45 +73,48 @@ while True:
     table_contours, _ = cv2.findContours(table_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     ball_contours, _ = cv2.findContours(ball_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     net_post_detected = False
+    if(frame_count < 100):
+        for contour in red_contours:
+            area = cv2.contourArea(contour)
 
-    for contour in red_contours:
-        area = cv2.contourArea(contour)
+            if area > 1100 and area < 1400:  
+                x, y, w, h = cv2.boundingRect(contour)
+                net_post_x = x + w // 2  # x-coordinate of the net post
+                net_post_detected = True
 
-        if area > 100 and area < 300:  
-            x, y, w, h = cv2.boundingRect(contour)
-            net_post_x = x + w // 2  # x-coordinate of the net post
-            net_post_detected = True
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                cv2.putText(frame, f"area: {area}", (x, y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
-            cv2.putText(frame, f"area: {area}", (x, y),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                # midpoint line (red)
+                # cv2.line(frame, (net_post_x, 0), (net_post_x, frame.shape[0]), (0, 0, 255), 2)
+                midpoint = net_post_x
+                center_y = y + h // 2 
 
-            # midpoint line (red)
-            cv2.line(frame, (net_post_x, 0), (net_post_x, frame.shape[0]), (0, 0, 255), 2)
-            midpoint = net_post_x
-            center_y = y + h // 2 
+                # center of net (upper lower bound for table) (yellow)
+                # cv2.line(frame, (0, center_y), (frame.shape[1], center_y), (0, 255, 255), 2)
+                lower2_bound = center_y
+                # upper bound line (magenta)
+                cv2.line(frame, (0, y), (frame.shape[1], y), (255, 0, 255), 2)
+                upper_bound = y
+                # break  # only the first (largest) red contour is used
+        for contour in table_contours:
+            area = cv2.contourArea(contour)
 
-            # center of net (upper lower bound for table) (yellow)
-            cv2.line(frame, (0, center_y), (frame.shape[1], center_y), (0, 255, 255), 2)
-            lower2_bound = center_y
-            # upper bound line (magenta)
-            cv2.line(frame, (0, y), (frame.shape[1], y), (255, 0, 255), 2)
-            upper_bound = y
-            break  # only the first (largest) red contour is used
-    for contour in table_contours:
-        area = cv2.contourArea(contour)
+            if area > 1000:  
+                x, y, w, h = cv2.boundingRect(contour)
+                net_post_x = x + w // 2  
+                net_post_detected = True
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                # bottom of table?
+                lower1_bound = y + h
+                cv2.putText(frame, f"area: {area}", (x, y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    cv2.line(frame, (0, lower2_bound), (frame.shape[1], lower2_bound), (0, 255, 255), 2)        
+    cv2.line(frame, (0, lower1_bound), (frame.shape[1], lower1_bound), (0, 255, 255), 2)    
+    cv2.line(frame, (0, upper_bound), (frame.shape[1], upper_bound), (255, 0, 255), 2)    
 
-        if area > 1000:  
-            x, y, w, h = cv2.boundingRect(contour)
-            net_post_x = x + w // 2  
-            net_post_detected = True
 
-            # bottom of table?
-            cv2.line(frame, (0, y + h), (frame.shape[1], y + h), (0, 255, 255), 2)
-            lower1_bound = y + h
-            cv2.putText(frame, f"area: {area}", (x, y),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            
     for contour in ball_contours:
         area = cv2.contourArea(contour)
         perimeter = cv2.arcLength(contour, True)
@@ -110,56 +124,52 @@ while True:
 
         circularity = 4 * np.pi * (area / (perimeter ** 2))
         
-        if 0.3 < circularity < 1.3:  
+        if 0.1 < circularity:  
             (x, y), radius = cv2.minEnclosingCircle(contour)
             center = (int(x), int(y))
             radius = int(radius)
             bottom = center[1] + radius
+            # print(f"bottom: {bottom}")
             cv2.circle(frame, center, radius, (0, 255, 0), 2)
-            cv2.putText(frame, f"Ball", (center[0] - 10, center[1] - 10),
+            cv2.putText(frame, f"Ball {circularity}", (center[0] - 10, center[1] - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             # determine side
             if(center[0] > midpoint):
-                current_side = "RIGHT"
+                current_side = 0 # right
             else:
-                current_side = "LEFT"
-            print(current_side)
+                current_side = 1 # left
+            # print(current_side)
             
             # logic for bounce upper bound
             if(bottom < upper_bound):
                 above = True
-                print("higher")
+                # print("higher")
             else:
                 above = False
             # logic for table touch
-            if(bottom >= lower2_bound - 5 and bottom <= lower1_bound ):
+            if(bottom >= lower2_bound - 60 and bottom <= lower1_bound + 60 ):
                 touch = True
-                print("on table")
+                # print("on table")
             else:
                 touch = False
             ball_positions.append((above, touch))
-
+            if(not prev_touch and touch):
+                bounce = True
+            else:
+                bounce = False
+            prev_above = above
+            prev_touch = touch
             # FSM?? for bounce detection
-            if(len(ball_positions) >= 4):
-                last_above = ball_positions[2][0]
-                last_touch = ball_positions[2][1]
-
-                lastlast_above = ball_positions[1][0]
-                lastlast_touch = ball_positions[1][1]
-
-                if(lastlast_above and last_touch and above):
-                    bounce = True
-                else:
-                    bounce = False
-    if(bounce):
-        print("BOUNCE YAY!")
+    if(bounce and current_side == 0): # right
+        print("BOUNCE RIGHT!")
+    elif(bounce and current_side == 1): # left
+        print("BOUNCE LEFT!")
     bounce = False
     cv2.imshow('test', frame)
 
     # q exit
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
-    
-    print()
+
 cap.release()
 cv2.destroyAllWindows()
