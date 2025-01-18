@@ -6,6 +6,7 @@ cap = cv2.VideoCapture(1)  # camera settings
 if not cap.isOpened():
     print("Cannot open camera")
     exit()
+fgbg = cv2.createBackgroundSubtractorMOG2(history=200, varThreshold=25, detectShadows=False)
 
 while True:
     ret, frame = cap.read()
@@ -19,42 +20,35 @@ while True:
     green = (0, 255, 0)
     # define red color range
     lower_orange = np.array([10, 150, 150])  # Hue, Saturation, Value
-    upper_orange = np.array([30, 255, 255])
+    upper_orange = np.array([35, 255, 255])
 
     lower_green = np.array([35, 50, 50])  
     upper_green = np.array([85, 255, 150])
  
 
-    mask = cv2.inRange(hsv, lower_green, upper_green)
-    # fill in holes/lines for ball --> detected objects are white, bg black
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_DILATE, np.ones((5, 5), np.uint8))
+    color_mask = cv2.inRange(hsv, lower_orange, upper_orange)
 
-    # retr_external -- outermost contours
-    # chain_approx_simple -- faster??? read that somewhere
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    # cv2.drawContours(frame, contours, -1, blue, 2)
+    # Find contours in the combined mask
+    contours, _ = cv2.findContours(color_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
     for contour in contours:
-        area = cv2.contourArea(contour) # area of contour
+        area = cv2.contourArea(contour)
         perimeter = cv2.arcLength(contour, True)
 
-        # div by 0
-        if perimeter == 0:
+        if perimeter == 0 or area < 150:  
             continue
-        # 1 = perfect circle
+
         circularity = 4 * np.pi * (area / (perimeter ** 2))
 
-        if area > 300 and area < 1200:
-            # fit a circle around the contour
+        if 0.3 < circularity < 1.3:  
             (x, y), radius = cv2.minEnclosingCircle(contour)
-            
             center = (int(x), int(y))
             radius = int(radius)
 
-            cv2.drawContours(frame, [contour], -1, (255, 0, 0), 2)
-            cv2.circle(frame, center, radius, (0, 0, 255), 2)
-            cv2.putText(frame, f"{circularity:.2f} {area}", (center[0]-20, center[1]-20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+           
+            cv2.circle(frame, center, radius, (0, 255, 0), 2)
+            cv2.putText(frame, f"Ball", (center[0] - 10, center[1] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
     cv2.imshow('test', frame)
 
     # q exit
