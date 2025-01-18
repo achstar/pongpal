@@ -9,6 +9,12 @@ PINS = [2, 3, 6, 8, 7, 4, 5]  # GPIO pins for each segment (A-G)
 # Initialize NeoPixel objects for each strip
 segments = [neopixel.NeoPixel(Pin(pin, Pin.OUT), NUM_LEDS_PER_SEGMENT) for pin in PINS]
 
+# Initialize button and ADC input pins
+adc = ADC(Pin(26))
+button_dec = Pin(10, Pin.IN)
+button_inc = Pin(11, Pin.IN)
+button_sel = Pin(12, Pin.IN)
+
 # Hexadecimal digit to 7-segment mapping (A-G)
 HEX_TO_SEGMENTS = {
     0: [1, 1, 1, 1, 1, 1, 0],
@@ -54,8 +60,25 @@ def display_number(num):
             if is_on:
                 set_segment_color(segment, (255, 0, 0))  # Red color
 
+def update_button(i, sel):
+    if (button_sel.value() == sel):
+        if (button_dec.value()):
+            print("decrement button pressed!")
+            if i == 15:
+                i = 0
+            else:
+                i += 1
+            display_number(i)
+        elif (button_inc.value()):
+            print("increment button pressed!")
+            if i == 0:
+                i = 15
+            else:
+                i -= 1
+            display_number(i)
+    return i
+
 try:
-    adc = ADC(Pin(26))
     display_number(0)
     i = 0
     while True:
@@ -66,7 +89,13 @@ try:
                 i += 1
             
             display_number(i)
-            time.sleep(1)
+            start = time.ticks_ms()
+            while (time.ticks_diff(time.ticks_ms(), start) < 1000):
+                i = update_button(i, False) # one board should be false, one should be true
+                time.sleep_ms(250) # debounce
+        else:
+            i = update_button(i, False) # one board should be false, one should be true
+            time.sleep_ms(250) # debounce
             
     #while True:
     #    for i in range(16):  # 0 to F
