@@ -14,6 +14,8 @@ prev_frame_num = 0
 threshold = 30
 double_bounce_threshold = 5
 start_threshold = 10
+left_score = 0
+right_score = 0
 
 # Game state machine
 def advance_state_machine(left_bounce, right_bounce, frame_num):
@@ -71,6 +73,8 @@ def advance_state_machine(left_bounce, right_bounce, frame_num):
 # camera 
 gst_pipeline = "v4l2src device=/dev/video0 ! image/jpeg, width=1600, height=1200, framerate=30/1 ! jpegdec ! videoconvert ! appsink"
 cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+text_window = np.zeros((300, 600, 3), dtype=np.uint8)
+
 # cv2.namedWindow('test', cv2.WINDOW_NORMAL)
 # (Optional) Set the initial window size
 # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1600)
@@ -117,7 +121,7 @@ while True:
     if not ret:
         print("Can't receive frame (stream end?). Exiting ...")
         break
-
+    text_window.fill(0)  # Clear the text window (black background)
     # hsv conversion
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     blue = (255, 0, 0)
@@ -259,18 +263,24 @@ while True:
         GPIO.output(output_pin_left, GPIO.HIGH)
         last_point_frame_count = frame_count
         pin_is_high = True
+        left_score += 1
     elif (right_point):
         print("Increment right point")
         GPIO.output(output_pin_right, GPIO.HIGH)
         last_point_frame_count = frame_count
         pin_is_high = True
+        right_score += 1
+
     elif (pin_is_high and (frame_count - last_point_frame_count > 20)):
         print("Turning off increment output")
         GPIO.output(output_pin_left, GPIO.LOW)
         GPIO.output(output_pin_right, GPIO.LOW)
         pin_is_high = False
+    # Add text to the text window
+    cv2.putText(text_window, f"{left_score} - {right_score}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    cv2.putText(text_window, f"Frame Rate: 30 FPS", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
     cv2.imshow('test', frame)
-
+    cv2.imshow('Text Window', text_window)
     # q exit
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
