@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from collections import deque
 from enum import Enum
+import Jetson.GPIO as GPIO
 
 class State(Enum):
     START = 1
@@ -10,23 +11,30 @@ class State(Enum):
 
 curr_state = State.START
 prev_frame_num = 0
-threshold = 50
+threshold = 30
+double_bounce_threshold = 5
+start_threshold = 10
 
 # Game state machine
 def advance_state_machine(left_bounce, right_bounce, frame_num):
+    global curr_state
+    global prev_frame_num
+    global threshold
     left_point = False
     right_point = False
     prev_state = curr_state
     if (curr_state == State.START):
-        prev_frame_num = frame_num
-        if (left_bounce):
+        if (left_bounce and ((frame_num - prev_frame_num) > start_threshold)):
             curr_state = State.LEFT_BOUNCE
-        elif (right_bounce):
+            prev_frame_num = frame_num
+        elif (right_bounce and ((frame_num - prev_frame_num) > start_threshold)):
             curr_state = State.RIGHT_BOUNCE
+            prev_frame_num = frame_num
         else:
             curr_state = State.START # don't change state
     elif (curr_state == State.LEFT_BOUNCE):
-        if (left_bounce): # double bounce case
+        if (left_bounce and ((frame_num - prev_frame_num) > double_bounce_threshold)): # double bounce case
+            print("double bounce")
             prev_frame_num = frame_num
             curr_state = State.START
             right_point = True
@@ -37,10 +45,12 @@ def advance_state_machine(left_bounce, right_bounce, frame_num):
             if ((frame_num - prev_frame_num) < threshold):
                 curr_state = State.LEFT_BOUNCE # don't change state
             else:
+                print("Missed ball")
                 right_point = True
                 curr_state = State.START
     elif (curr_state == State.RIGHT_BOUNCE):
-        if (right_bounce): # double bounce case
+        if (right_bounce and ((frame_num - prev_frame_num) > double_bounce_threshold)): # double bounce case
+            print("double bounce")
             prev_frame_num = frame_num
             curr_state = State.START
             left_point = True
@@ -51,6 +61,7 @@ def advance_state_machine(left_bounce, right_bounce, frame_num):
             if ((frame_num - prev_frame_num) < threshold):
                 curr_state = State.RIGHT_BOUNCE # don't change state
             else:
+                print("Missed ball")
                 left_point = True
                 curr_state = State.START
     if (prev_state != curr_state):
@@ -58,17 +69,16 @@ def advance_state_machine(left_bounce, right_bounce, frame_num):
     return (left_point, right_point)
 
 # camera 
-cap = cv2.VideoCapture(1)  # camera settings
-cv2.namedWindow('test', cv2.WINDOW_NORMAL)
+gst_pipeline = "v4l2src device=/dev/video0 ! image/jpeg, width=1600, height=1200, framerate=30/1 ! jpegdec ! videoconvert ! appsink"
+cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+# cv2.namedWindow('test', cv2.WINDOW_NORMAL)
 # (Optional) Set the initial window size
-cv2.resizeWindow('test', 800, 600)  # Width, Height
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1600)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1200)
-cap.set(cv2.CAP_PROP_FPS, 30)
+# cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1600)
+# cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1200)
+# cap.set(cv2.CAP_PROP_FPS, 30)
 actual_fps = cap.get(cv2.CAP_PROP_FPS)
 print(f"Camera FPS set to: {actual_fps}")
 # positions queue
-ball_positions = deque(maxlen=4)
 frame_count = 0
 
 # bounds 
@@ -90,6 +100,17 @@ if not cap.isOpened():
     print("Cannot open camera")
     exit()
 
+# GPIO setup
+GPIO.setmode(GPIO.BCM)
+output_pin_left = 18 # pin 12 in BCM mapping
+output_pin_right = 4 # pin 7 in BCM mapping
+GPIO.setup(output_pin_left, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(output_pin_right, GPIO.OUT, initial=GPIO.LOW)
+GPIO.output(output_pin_left, GPIO.LOW)
+GPIO.output(output_pin_right, GPIO.LOW)
+last_point_frame_count = 0
+pin_is_high = False
+
 while True:
     ret, frame = cap.read()
     frame_count += 1
@@ -109,10 +130,10 @@ while True:
     lower_red1 = np.array([0, 200, 150])    
     upper_red1 = np.array([10, 255, 255])
     # red 2 wraparound
-    lower_red2 = np.array([170, 200, 150])  
+    lower_red2 = np.array([170, 200, 120])  
     upper_red2 = np.array([180, 255, 255])
     # table blue
-    lower_blue = np.array([100, 150, 50])  
+    lower_blue = np.array([100, 100, 50])  
     upper_blue = np.array([130, 255, 255])
 
     # masks
@@ -132,7 +153,7 @@ while True:
         for contour in red_contours:
             area = cv2.contourArea(contour)
 
-            if area > 1100 and area < 1400:  
+            if area > 100 and area < 2000:  
                 x, y, w, h = cv2.boundingRect(contour)
                 net_post_x = x + w // 2  # x-coordinate of the net post
                 net_post_detected = True
@@ -148,7 +169,7 @@ while True:
 
                 # center of net (upper lower bound for table) (yellow)
                 # cv2.line(frame, (0, center_y), (frame.shape[1], center_y), (0, 255, 255), 2)
-                lower2_bound = center_y
+                # lower2_bound = center_y
                 # upper bound line (magenta)
                 cv2.line(frame, (0, y), (frame.shape[1], y), (255, 0, 255), 2)
                 upper_bound = y
@@ -156,13 +177,14 @@ while True:
         for contour in table_contours:
             area = cv2.contourArea(contour)
 
-            if area > 1000:  
+            if area > 5000:  
                 x, y, w, h = cv2.boundingRect(contour)
                 net_post_x = x + w // 2  
                 net_post_detected = True
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
                 # bottom of table?
                 lower1_bound = y + h
+                lower2_bound = y
                 cv2.putText(frame, f"area: {area}", (x, y),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
     cv2.line(frame, (0, lower2_bound), (frame.shape[1], lower2_bound), (0, 255, 255), 2)        
@@ -202,18 +224,24 @@ while True:
             else:
                 above = False
             # logic for table touch
-            if(bottom >= lower2_bound - 60 and bottom <= lower1_bound + 60 ):
+            if(bottom >= lower2_bound - 120 and bottom <= lower1_bound + 120 ):
                 touch = True
                 # print("on table")
             else:
-                touch = False
-            ball_positions.append((above, touch))
-            if(not prev_touch and touch):
+                touch = False   
+            # logic for below table
+            if(bottom > lower1_bound + 120):
+                below = True
+            else:
+                below = False
+            # bounce logic 
+            if(not prev_touch and touch and not below):
                 bounce = True
             else:
                 bounce = False
             prev_above = above
             prev_touch = touch
+            prev_below = below
             # FSM?? for bounce detection
     left_point = False
     right_point = False
@@ -222,14 +250,25 @@ while True:
         (left_point, right_point) = advance_state_machine(False, True, frame_count)
     elif(bounce and current_side == 1): # left
         print("BOUNCE LEFT!")
-        (left_point, right_point) = advance_state_machine(False, True, frame_count)
+        (left_point, right_point) = advance_state_machine(True, False, frame_count)
     else:
         (left_point, right_point) = advance_state_machine(False, False, frame_count)
     bounce = False
-    if (left_point)
+    if (left_point):
         print("Increment left point")
-    if (right_point)
+        GPIO.output(output_pin_left, GPIO.HIGH)
+        last_point_frame_count = frame_count
+        pin_is_high = True
+    elif (right_point):
         print("Increment right point")
+        GPIO.output(output_pin_right, GPIO.HIGH)
+        last_point_frame_count = frame_count
+        pin_is_high = True
+    elif (pin_is_high and (frame_count - last_point_frame_count > 20)):
+        print("Turning off increment output")
+        GPIO.output(output_pin_left, GPIO.LOW)
+        GPIO.output(output_pin_right, GPIO.LOW)
+        pin_is_high = False
     cv2.imshow('test', frame)
 
     # q exit
@@ -238,3 +277,4 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
+GPIO.cleanup()

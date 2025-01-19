@@ -3,19 +3,23 @@
 import Jetson.GPIO as GPIO
 import time
 
-output_pin = 18 # pin 12 in BCM mapping
+output_pin = 18 # pin 40 in BCM mapping
 
 def main():
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(output_pin, GPIO.OUT, initial=GPIO.HIGH)
 
     print("starting demo")
-    toggle_value = GPIO.HIGH
+    toggle_value = True
     try:
         while True:
             time.sleep(1)
-            GPIO.output(output_pin, toggle_value)
-            toggle_value ^= GPIO.HIGH
+            if (toggle_value):
+                GPIO.output(output_pin, GPIO.LOW)
+                toggle_value = False
+            else:
+                GPIO.output(output_pin, GPIO.HIGH)
+                toggle_value = True
     finally:
         GPIO.cleanup()
 
