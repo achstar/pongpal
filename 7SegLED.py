@@ -10,7 +10,7 @@ PINS = [2, 3, 6, 8, 7, 4, 5]  # GPIO pins for each segment (A-G)
 segments = [neopixel.NeoPixel(Pin(pin, Pin.OUT), NUM_LEDS_PER_SEGMENT) for pin in PINS]
 
 # Initialize button and ADC input pins
-adc = ADC(Pin(26))
+adc = ADC(Pin(27))
 button_dec = Pin(10, Pin.IN)
 button_inc = Pin(11, Pin.IN)
 button_sel = Pin(12, Pin.IN)
@@ -81,19 +81,23 @@ def update_button(i, sel):
 try:
     display_number(0)
     i = 0
+    adcRead = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     while True:
-        if (adc.read_u16() > 30000):
+        adcRead.pop(0)
+        
+        adcRead.append(adc.read_u16())
+        if (sum(adcRead) > 300000):
+            adcRead = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            print("here1", adc.read_u16())
             if i == 15:
                 i = 0
             else:
                 i += 1
             
             display_number(i)
-            start = time.ticks_ms()
-            while (time.ticks_diff(time.ticks_ms(), start) < 1000):
-                i = update_button(i, False) # one board should be false, one should be true
-                time.sleep_ms(250) # debounce
+            time.sleep_ms(1000) # debounce
         else:
+            print("here3")
             i = update_button(i, False) # one board should be false, one should be true
             time.sleep_ms(250) # debounce
             
