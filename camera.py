@@ -1,6 +1,61 @@
 import cv2
 import numpy as np
 from collections import deque
+from enum import Enum
+
+class State(Enum):
+    START = 1
+    LEFT_BOUNCE = 2
+    RIGHT_BOUNCE = 3
+
+curr_state = State.START
+prev_frame_num = 0
+threshold = 50
+
+# Game state machine
+def advance_state_machine(left_bounce, right_bounce, frame_num):
+    left_point = False
+    right_point = False
+    prev_state = curr_state
+    if (curr_state == State.START):
+        prev_frame_num = frame_num
+        if (left_bounce):
+            curr_state = State.LEFT_BOUNCE
+        elif (right_bounce):
+            curr_state = State.RIGHT_BOUNCE
+        else:
+            curr_state = State.START # don't change state
+    elif (curr_state == State.LEFT_BOUNCE):
+        if (left_bounce): # double bounce case
+            prev_frame_num = frame_num
+            curr_state = State.START
+            right_point = True
+        elif (right_bounce):
+            prev_frame_num = frame_num
+            curr_state = State.RIGHT_BOUNCE
+        else:
+            if ((frame_num - prev_frame_num) < threshold):
+                curr_state = State.LEFT_BOUNCE # don't change state
+            else:
+                right_point = True
+                curr_state = State.START
+    elif (curr_state == State.RIGHT_BOUNCE):
+        if (right_bounce): # double bounce case
+            prev_frame_num = frame_num
+            curr_state = State.START
+            left_point = True
+        elif (left_bounce):
+            prev_frame_num = frame_num
+            curr_state = State.LEFT_BOUNCE
+        else:
+            if ((frame_num - prev_frame_num) < threshold):
+                curr_state = State.RIGHT_BOUNCE # don't change state
+            else:
+                left_point = True
+                curr_state = State.START
+    if (prev_state != curr_state):
+        print("Entered state: " + curr_state.name)
+    return (left_point, right_point)
 
 # camera 
 cap = cv2.VideoCapture(1)  # camera settings
@@ -160,11 +215,21 @@ while True:
             prev_above = above
             prev_touch = touch
             # FSM?? for bounce detection
+    left_point = False
+    right_point = False
     if(bounce and current_side == 0): # right
         print("BOUNCE RIGHT!")
+        (left_point, right_point) = advance_state_machine(False, True, frame_count)
     elif(bounce and current_side == 1): # left
         print("BOUNCE LEFT!")
+        (left_point, right_point) = advance_state_machine(False, True, frame_count)
+    else:
+        (left_point, right_point) = advance_state_machine(False, False, frame_count)
     bounce = False
+    if (left_point)
+        print("Increment left point")
+    if (right_point)
+        print("Increment right point")
     cv2.imshow('test', frame)
 
     # q exit
